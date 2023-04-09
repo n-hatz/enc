@@ -11,7 +11,7 @@ torch.cuda.manual_seed(RANDOM_SEED)
 torch.backends.cudnn.deterministic = True
 
 soundstream = SoundStream( #encoder decoder only
-    emb_size=512,
+    emb_size=256,
     target_sample_hz=24000,
     strides=(2,4,5,8),
 )
