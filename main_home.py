@@ -3,7 +3,7 @@ from soundstream import SoundStream
 from trainer import SoundStreamTrainer
 
 soundstream = SoundStream( #encoder decoder only
-    emb_size=256,
+    emb_size=512,
     target_sample_hz=24000,
     strides=(2,4,5,8),
 )
@@ -17,7 +17,7 @@ trainer = SoundStreamTrainer(
     batch_size = 8,
     grad_accum_every = 1,       # effective batch size of 8
     data_max_length_seconds = 1,
-    num_epochs=10,
+    num_epochs=1,
     use_mask=True,
 )
 

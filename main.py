@@ -11,7 +11,7 @@ torch.cuda.manual_seed(RANDOM_SEED)
 torch.backends.cudnn.deterministic = True
 
 soundstream = SoundStream( #encoder decoder only
-    emb_size=256,
+    emb_size=512,
     target_sample_hz=24000,
     strides=(2,4,5,8),
 )
@@ -21,7 +21,7 @@ trainer = SoundStreamTrainer(
     soundstream,
     folder = '/data2/nchatz/Documents/thesis/data/development',
     batch_size = 48,
-    grad_accum_every = 4,       # effective batch size of 32
+    grad_accum_every = 1,       # effective batch size of 48
     data_max_length_seconds = 1,
     num_epochs=100,
     use_mask=True
