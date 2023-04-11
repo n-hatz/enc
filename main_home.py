@@ -18,6 +18,7 @@ trainer = SoundStreamTrainer(
     grad_accum_every = 1,       # effective batch size of 8
     data_max_length_seconds = 1,
     num_epochs=1,
+    valid_frac=0.2,
     use_mask=True,
 )
 
