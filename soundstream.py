@@ -265,7 +265,10 @@ class SoundStream(nn.Module):
                 u2 = torch.max(x[b,:,:]).clone().detach()
                 u1 = torch.min(x[b,:,:]).clone().detach()
                 mask_index = random.randint(0,x.size(1)-mask_size-1)
-                mask = (u2-u1)*torch.rand(mask_size,x.size(2)).cuda()+u1
+                if torch.cuda.is_available():
+                    mask = (u2-u1)*torch.rand(mask_size,x.size(2)).cuda()+u1
+                else:
+                    mask = (u2-u1)*torch.rand(mask_size,x.size(2))+u1
                 x[b,mask_index:mask_index+mask_size,:] = mask
         
         if new_blocks>0:
