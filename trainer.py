@@ -5,6 +5,7 @@ from pathlib import Path
 from shutil import rmtree
 
 from tqdm.auto import tqdm
+import random
 
 from beartype.typing import Union, List, Optional, Tuple
 from typing_extensions import Annotated
@@ -245,18 +246,31 @@ class SoundStreamTrainer(nn.Module):
     def is_local_main(self):
         return self.accelerator.is_local_main_process
 
+    def mask_waveform_continuous(self,wave,pct=0.3):
+        mask_size = int(pct*wave.size(1))
+        for b in range(wave.size(0)):
+            mask = torch.zeros(mask_size)
+            mask_index = random.randint(0,wave.size(1)-mask_size-1)
+            if torch.cuda.is_available():
+                mask = mask.cuda()
+            wave[b,mask_index:mask_index+mask_size] = mask
+        return wave
+    
+    def mask_waveform_sparse(self,wave,pct=0.3):
+        mask_size = int(pct*wave.size(1))
+
     def train_step(self,loss_fn = nn.L1Loss()):
         device = self.device
         
         self.soundstream.train()
         train_loss = 0
         
-        for i, batch in enumerate(self.dl):
+        for i, batch in enumerate(tqdm(self.dl,desc="Train batches",position=1,leave=True)):
             wave, = batch    
             wave = wave.to(device)
             rec_wave = self.soundstream(wave, use_mask=self.use_mask).squeeze(1)
 
-            loss = loss_fn(rec_wave,wave)
+            loss = 100*loss_fn(rec_wave,wave)
 
             train_loss += loss.item()
             
@@ -278,11 +292,11 @@ class SoundStreamTrainer(nn.Module):
         test_loss = 0
         
         with torch.inference_mode():
-            for i,batch in enumerate(self.valid_dl):
+            for i,batch in enumerate(tqdm(self.valid_dl,desc="Test batches",position=2,leave=True)):
                 wave, = batch
                 wave = wave.to(device)
                 rec_wave = self.soundstream(wave, use_mask=self.use_mask).squeeze(1)
-                loss = loss_fn(rec_wave,wave)
+                loss = 100*loss_fn(rec_wave,wave)
                 test_loss += loss.item()
 
         return test_loss / len(self.valid_dl)
@@ -290,9 +304,45 @@ class SoundStreamTrainer(nn.Module):
     def train(self):
         best_test_loss = float('inf')
         #early_stopping = EarlyStopping(tolerance=5, min_delta=0.001)
-        for epoch in tqdm(range(self.epochs)):
+        for epoch in tqdm(range(self.epochs),desc="Epochs",position=0):
             train_loss = self.train_step()
             test_loss = self.test_step()
+            
+            self.print(" ")
+            self.print(
+              f"Epoch: {epoch+1} | "
+              f"train_loss: {train_loss:.4f} | "
+              f"test_loss: {test_loss:.4f} | "
+            )
+            
+            #save best model
+            self.accelerator.wait_for_everyone()
+            if self.is_main:
+                model_path = str(self.results_folder / f'soundstream.curr.pt')
+                self.save(model_path)
+
+                if test_loss<best_test_loss:
+                    best_test_loss = test_loss
+                    model_path = str(self.results_folder / f'soundstream.best.pt')
+                    self.save(model_path)
+                    self.print(f'{epoch+1}: saving model to {str(self.results_folder)}')
+            self.print(" ")
+            #early stopping
+            '''
+            early_stopping(train_loss,test_loss)
+            if early_stopping.early_stop:
+                self.print(f'stopping at epoch {epoch+1}')
+                break
+            '''
+        
+        self.print('training complete')
+    
+    def train2(self):
+        best_test_loss = float('inf')
+        #early_stopping = EarlyStopping(tolerance=5, min_delta=0.001)
+        for epoch in tqdm(range(self.epochs),desc="Epochs",position=0):
+            train_loss = self.train_step2()
+            test_loss = self.test_step2()
             
             self.print(
               f"Epoch: {epoch+1} | "
@@ -311,7 +361,7 @@ class SoundStreamTrainer(nn.Module):
                     model_path = str(self.results_folder / f'soundstream.best.pt')
                     self.save(model_path)
                     self.print(f'{epoch+1}: saving model to {str(self.results_folder)}')
-            
+            self.print(" ")
             #early stopping
             '''
             early_stopping(train_loss,test_loss)
@@ -320,4 +370,54 @@ class SoundStreamTrainer(nn.Module):
                 break
             '''
         
-        self.print('training complete')	
+        self.print('training complete')
+    
+    def train_step2(self,loss_fn = nn.L1Loss()):
+        device = self.device
+        
+        self.soundstream.train()
+        train_loss = 0
+        
+        for i, batch in enumerate(tqdm(self.dl,desc="Train batches",position=1,leave=True)):
+            wave, = batch    
+            wave = wave.to(device)
+
+            masked_wave = wave.clone()
+            masked_wave = self.mask_waveform_continuous(masked_wave)
+            print(torch.count_nonzero(wave))
+            print(torch.count_nonzero(masked_wave))
+
+            rec_wave = self.soundstream(masked_wave, use_mask=False).squeeze(1)
+
+            loss = 100*loss_fn(rec_wave,wave)
+
+            train_loss += loss.item()
+            
+            self.accelerator.backward(loss / self.grad_accum_every)
+
+            if ((i+1) % self.grad_accum_every == 0) or (i+1 == len(self.dl)):
+                
+                if exists(self.max_grad_norm):
+                    self.accelerator.clip_grad_norm_(self.soundstream.parameters(), self.max_grad_norm)
+
+                self.optim.step()
+                self.optim.zero_grad()
+
+        return train_loss / len(self.dl)
+        
+    def test_step2(self,loss_fn = nn.L1Loss()):
+        device = self.device
+        self.soundstream.eval()
+        test_loss = 0
+        
+        with torch.inference_mode():
+            for i,batch in enumerate(tqdm(self.valid_dl,desc="Test batches",position=2,leave=True)):
+                wave, = batch
+                wave = wave.to(device)
+                masked_wave = wave.clone()
+                masked_wave = self.mask_waveform_continuous(masked_wave)
+                rec_wave = self.soundstream(masked_wave, use_mask=False).squeeze(1)
+                loss = 100*loss_fn(rec_wave,wave)
+                test_loss += loss.item()
+
+        return test_loss / len(self.valid_dl)
