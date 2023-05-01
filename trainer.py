@@ -105,7 +105,7 @@ class SoundStreamTrainer(nn.Module):
         apply_grad_penalty_every = 4,
         dl_num_workers = 0,
         accelerate_kwargs: dict = dict(),
-        force_clear_prev_results = None,  # set to True | False to skip the prompt
+        force_clear_prev_results = False,  # set to True | False to skip the prompt
         num_epochs = 1,
         use_mask = False
     ):
@@ -145,6 +145,9 @@ class SoundStreamTrainer(nn.Module):
             target_sample_hz = soundstream.target_sample_hz,
             seq_len_multiple_of = soundstream.seq_len_multiple_of
         )
+
+        if torch.cuda.is_available():
+            self.print("Running on: "+torch.cuda.get_device_name(torch.cuda.current_device))
 
         # split for validation
 
@@ -318,12 +321,12 @@ class SoundStreamTrainer(nn.Module):
             #save best model
             self.accelerator.wait_for_everyone()
             if self.is_main:
-                model_path = str(self.results_folder / f'soundstream.curr.pt')
+                model_path = str(self.results_folder / f'model1.curr.pt')
                 self.save(model_path)
 
                 if test_loss<best_test_loss:
                     best_test_loss = test_loss
-                    model_path = str(self.results_folder / f'soundstream.best.pt')
+                    model_path = str(self.results_folder / f'model1.best.pt')
                     self.save(model_path)
                     self.print(f'{epoch+1}: saving model to {str(self.results_folder)}')
             self.print(" ")
@@ -353,12 +356,12 @@ class SoundStreamTrainer(nn.Module):
             #save best model
             self.accelerator.wait_for_everyone()
             if self.is_main:
-                model_path = str(self.results_folder / f'soundstream.curr.pt')
+                model_path = str(self.results_folder / f'model2.curr.pt')
                 self.save(model_path)
 
                 if test_loss<best_test_loss:
                     best_test_loss = test_loss
-                    model_path = str(self.results_folder / f'soundstream.best.pt')
+                    model_path = str(self.results_folder / f'model2.best.pt')
                     self.save(model_path)
                     self.print(f'{epoch+1}: saving model to {str(self.results_folder)}')
             self.print(" ")
@@ -384,8 +387,6 @@ class SoundStreamTrainer(nn.Module):
 
             masked_wave = wave.clone()
             masked_wave = self.mask_waveform_continuous(masked_wave)
-            print(torch.count_nonzero(wave))
-            print(torch.count_nonzero(masked_wave))
 
             rec_wave = self.soundstream(masked_wave, use_mask=False).squeeze(1)
 
