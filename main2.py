@@ -19,6 +19,7 @@ soundstream = SoundStream( #encoder decoder only
 )
 
 torch.cuda.set_device(1)
+
 # '/data2/nchatz/Documents/thesis/data/development'
 trainer = SoundStreamTrainer(
     soundstream,
