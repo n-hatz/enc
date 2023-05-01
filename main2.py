@@ -16,6 +16,7 @@ soundstream = SoundStream( #encoder decoder only
     strides=(2,4,5,8),
 )
 
+torch.cuda.set_device(1)
 # '/data2/nchatz/Documents/thesis/data/development'
 trainer = SoundStreamTrainer(
     soundstream,
