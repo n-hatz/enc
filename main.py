@@ -10,6 +10,8 @@ torch.manual_seed(RANDOM_SEED)
 torch.cuda.manual_seed(RANDOM_SEED)
 torch.backends.cudnn.deterministic = True
 
+#soundstream.load("./results/model1.curr.pt")
+
 soundstream = SoundStream( #encoder decoder only
     emb_size=256,
     target_sample_hz=24000,
