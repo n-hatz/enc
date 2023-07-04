@@ -15,10 +15,10 @@ torch.backends.cudnn.deterministic = True
 soundstream = SoundStream( #encoder decoder only
     emb_size=256,
     target_sample_hz=24000,
-    strides=(2,4,5,8),
+    strides=(3,4,5,8),
 )
 
-torch.cuda.set_device(0)
+#torch.cuda.set_device(0)
 
 # '/data2/nchatz/Documents/thesis/data/development'
 trainer = SoundStreamTrainer(
@@ -29,7 +29,8 @@ trainer = SoundStreamTrainer(
     data_max_length_seconds = 1,
     num_epochs=100,
     valid_frac=0.2,
-    use_mask=True
+    use_mask=False,
+    use_mask_sparse=True,
 ).cuda()
 
-trainer.train()
+trainer.train(shorten=0.1)
