@@ -32,6 +32,8 @@ from accelerate.utils import DistributedDataParallelKwargs
 
 from early_stopping import EarlyStopping
 
+import matplotlib.pyplot as plt
+
 # helpers
 
 def exists(val):
@@ -107,7 +109,8 @@ class SoundStreamTrainer(nn.Module):
         accelerate_kwargs: dict = dict(),
         force_clear_prev_results = False,  # set to True | False to skip the prompt
         num_epochs = 1,
-        use_mask = False
+        use_mask = False,
+        use_mask_sparse=False,
     ):
         super().__init__()
 
@@ -262,7 +265,7 @@ class SoundStreamTrainer(nn.Module):
     def mask_waveform_sparse(self,wave,pct=0.3):
         mask_size = int(pct*wave.size(1))
 
-    def train_step(self,loss_fn = nn.L1Loss()):
+    def train_step(self,shorten=None,loss_fn = nn.L1Loss()):
         device = self.device
         
         self.soundstream.train()
@@ -271,7 +274,16 @@ class SoundStreamTrainer(nn.Module):
         for i, batch in enumerate(tqdm(self.dl,desc="Train batches",position=1,leave=True)):
             wave, = batch    
             wave = wave.to(device)
-            rec_wave = self.soundstream(wave, use_mask=self.use_mask).squeeze(1)
+
+            if shorten:
+                new_wavesize = int(shorten*wave.shape[1])
+                short_wave = torch.zeros(wave.shape[0],new_wavesize)
+                for b in range(wave.shape[0]):
+                    index = random.randint(int(0.4*wave.shape[1]),int(0.6*wave.shape[1]))
+                    short_wave[b,:] = wave[b,index:index+new_wavesize]
+                wave = short_wave.clone()
+
+            rec_wave = self.soundstream(wave, use_mask_sparse=True,mask_pct=0.05).squeeze(1)
 
             loss = 100*loss_fn(rec_wave,wave)
 
@@ -289,7 +301,7 @@ class SoundStreamTrainer(nn.Module):
 
         return train_loss / len(self.dl)
         
-    def test_step(self,loss_fn = nn.L1Loss()):
+    def test_step(self,shorten=None,loss_fn = nn.L1Loss()):
         device = self.device
         self.soundstream.eval()
         test_loss = 0
@@ -298,18 +310,29 @@ class SoundStreamTrainer(nn.Module):
             for i,batch in enumerate(tqdm(self.valid_dl,desc="Test batches",position=2,leave=True)):
                 wave, = batch
                 wave = wave.to(device)
-                rec_wave = self.soundstream(wave, use_mask=self.use_mask).squeeze(1)
+
+                if shorten:
+                    new_wavesize = int(shorten*wave.shape[1])
+                    short_wave = torch.zeros(wave.shape[0],new_wavesize)
+                    for b in range(wave.shape[0]):
+                        index = random.randint(int(0.4*wave.shape[1]),int(0.6*wave.shape[1]))
+                        short_wave[b,:] = wave[b,index:index+new_wavesize]
+                    wave = short_wave.clone()
+
+                rec_wave = self.soundstream(wave, use_mask_sparse=True,mask_pct=0.05).squeeze(1)
                 loss = 100*loss_fn(rec_wave,wave)
                 test_loss += loss.item()
 
         return test_loss / len(self.valid_dl)
     
-    def train(self):
+    def train(self,shorten=None):
         best_test_loss = float('inf')
+        train_losses = []
+        test_losses = []
         #early_stopping = EarlyStopping(tolerance=5, min_delta=0.001)
         for epoch in tqdm(range(self.epochs),desc="Epochs",position=0):
-            train_loss = self.train_step()
-            test_loss = self.test_step()
+            train_loss = self.train_step(shorten=shorten)
+            test_loss = self.test_step(shorten=shorten)
             
             self.print(" ")
             self.print(
@@ -317,16 +340,19 @@ class SoundStreamTrainer(nn.Module):
               f"train_loss: {train_loss:.4f} | "
               f"test_loss: {test_loss:.4f} | "
             )
+
+            train_losses.append(train_loss)
+            test_losses.append(test_loss)
             
             #save best model
             self.accelerator.wait_for_everyone()
             if self.is_main:
-                model_path = str(self.results_folder / f'model1.curr.pt')
+                model_path = str(self.results_folder / f'model1.50.short.curr.pt')
                 self.save(model_path)
 
                 if test_loss<best_test_loss:
                     best_test_loss = test_loss
-                    model_path = str(self.results_folder / f'model1.best.pt')
+                    model_path = str(self.results_folder / f'model1.50.short.best.pt')
                     self.save(model_path)
                     self.print(f'{epoch+1}: saving model to {str(self.results_folder)}')
             self.print(" ")
@@ -337,7 +363,10 @@ class SoundStreamTrainer(nn.Module):
                 self.print(f'stopping at epoch {epoch+1}')
                 break
             '''
-        
+        #plt.plot(train_losses,label="train loss")
+        #plt.plot(test_losses,label="test loss")
+        #plt.legend(loc="upper right")
+        #plt.show()
         self.print('training complete')
     
     def train2(self):
