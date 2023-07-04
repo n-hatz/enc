@@ -58,7 +58,7 @@ class CausalConv1d(nn.Module):
         self.conv = nn.Conv1d(chan_in, chan_out, kernel_size, **kwargs)
 
     def forward(self, x):
-        x = F.pad(x, (self.causal_padding, 0),mode="reflect")
+        x = F.pad(x, (self.causal_padding, 0))#,mode="reflect")
         return self.conv(x)
 
 class CausalConvTranspose1d(nn.Module):
@@ -238,7 +238,8 @@ class SoundStream(nn.Module):
         return_encoded = False,
         input_sample_hz = None,
         use_mask = False,
-        mask_pct=0.25,
+        use_mask_sparse=False,
+        mask_pct=0.05,
         new_blocks=0,
         #use_gaussian = False,
     ):
@@ -258,8 +259,25 @@ class SoundStream(nn.Module):
 
         x = rearrange(x, 'b c n -> b n c')
 
+
+        if use_mask_sparse:
+            #enc(x) = [batch_size,emb_count,emb_size] [32,50,256] [0,1,2]
+            mask_number = int(mask_pct*x.size(1))+1
+            for b in range(x.size(0)): #for each wave in batch
+                u2 = torch.max(x[b,:,:]).clone().detach()
+                u1 = torch.min(x[b,:,:]).clone().detach()
+                mask_indexes = [random.randint(0,x.size(1)-1) for _ in range(mask_number)]
+                #real_ind = [m*480 for m in mask_indexes]
+                #print("Mask positions: ",real_ind)
+                for mi in mask_indexes:
+                    if torch.cuda.is_available():
+                        mask = (u2-u1)*torch.rand(1,x.size(2)).cuda()+u1
+                    else:
+                        mask = (u2-u1)*torch.rand(1,x.size(2))+u1
+                    x[b,mi,:] = mask
+
         if use_mask:
-            #enc(x) = [batch_size,emb_count,emb_size]
+            #enc(x) = [batch_size,emb_count,emb_size] [32,75,256] [0,1,2]
             mask_size = int(mask_pct*x.size(1))
             for b in range(x.size(0)): #for each wave in batch
                 u2 = torch.max(x[b,:,:]).clone().detach()
